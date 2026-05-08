@@ -1,0 +1,15 @@
+{
+  "name": "ai-team-collab-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dockerized MERN platform for AI-assisted student team project management.",
+  "scripts": {
+    "dev": "docker compose up --build",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "lint": "npm --prefix server run lint && npm --prefix client run lint",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
