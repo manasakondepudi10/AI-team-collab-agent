@@ -78,6 +78,21 @@ button {
   gap: 16px;
 }
 
+.oauth-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.github-auth-button {
+  width: 100%;
+  min-height: 48px;
+}
+
+.compact-form {
+  margin-top: 14px;
+}
+
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -283,7 +298,8 @@ textarea {
 }
 
 .content-grid,
-.creation-layout {
+.creation-layout,
+.planner-layout {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -422,6 +438,104 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.planner-layout {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+
+.planner-chat {
+  grid-column: span 2;
+  display: grid;
+  gap: 16px;
+}
+
+.planner-side {
+  display: grid;
+  gap: 18px;
+}
+
+.chat-thread {
+  min-height: 360px;
+  max-height: 520px;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e8edf5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.chat-bubble {
+  width: min(78%, 720px);
+  padding: 12px 14px;
+  border-radius: 8px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.chat-bubble.assistant {
+  justify-self: start;
+  background: #fff;
+  border: 1px solid #e1e7f0;
+  color: #344054;
+}
+
+.chat-bubble.user {
+  justify-self: end;
+  background: #246bfe;
+  color: #fff;
+}
+
+.chat-composer {
+  display: grid;
+  gap: 12px;
+}
+
+.chat-composer textarea {
+  min-height: 132px;
+}
+
+.plan-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.plan-section {
+  display: grid;
+  gap: 8px;
+}
+
+.plan-section h3,
+.plan-section p {
+  margin: 0;
+}
+
+.module-list {
+  display: grid;
+  gap: 10px;
+}
+
+.module-row {
+  border: 1px solid #e8edf5;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.module-row span,
+.module-row small {
+  display: block;
+  margin-top: 5px;
+  color: #667085;
+}
+
+.module-row small {
+  font-weight: 800;
+  color: #164bbb;
 }
 
 .full {
@@ -565,11 +679,13 @@ meter {
 
   .metric-grid,
   .content-grid,
-  .creation-layout {
+  .creation-layout,
+  .planner-layout {
     grid-template-columns: 1fr;
   }
 
-  .span-2 {
+  .span-2,
+  .planner-chat {
     grid-column: span 1;
   }
 }

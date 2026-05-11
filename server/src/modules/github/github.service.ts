@@ -17,6 +17,16 @@ export function githubOAuthUrl(state: string) {
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
+export function githubLoginUrl() {
+  const state = jwt.sign({ purpose: 'github-login' }, env.JWT_SECRET, { expiresIn: '10m' });
+  return githubOAuthUrl(`login:${state}`);
+}
+
+export function verifyGithubLoginState(state: string) {
+  const payload = jwt.verify(state, env.JWT_SECRET) as { purpose?: string };
+  if (payload.purpose !== 'github-login') throw new AppError('Invalid GitHub login session', 400);
+}
+
 export function githubConnectUrl(userId: string) {
   const state = jwt.sign({ sub: userId, purpose: 'github-connect' }, env.JWT_SECRET, { expiresIn: '10m' });
   return githubOAuthUrl(`connect:${state}`);
@@ -58,13 +68,18 @@ export async function getGithubIdentity(token: string) {
 
 export async function connectGithubAccount(userId: string, token: string) {
   const identity = await getGithubIdentity(token);
+  const githubId = String(identity.profile.id);
   const username = identity.profile.login.toLowerCase();
   const verifiedPrimary = identity.emails.find((email) => email.primary && email.verified) ?? identity.emails.find((email) => email.verified);
-  const existing = await UserModel.findOne({ _id: { $ne: userId }, 'github.username': username });
+  const existing = await UserModel.findOne({
+    _id: { $ne: userId },
+    $or: [{ 'github.id': githubId }, { 'github.username': username }]
+  });
   if (existing) throw new AppError(`GitHub account @${username} is already connected to another user`, 409);
 
   await UserModel.findByIdAndUpdate(userId, {
     github: {
+      id: githubId,
       username,
       email: verifiedPrimary?.email.toLowerCase(),
       emailVerifiedAt: verifiedPrimary ? new Date() : undefined,

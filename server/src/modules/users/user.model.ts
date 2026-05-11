@@ -13,11 +13,12 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true, select: false },
+    passwordHash: { type: String, select: false },
     avatarUrl: String,
     role: { type: String, enum: ['student', 'mentor', 'admin'], default: 'student' },
     skills: { type: [skillSchema], default: [] },
     github: {
+      id: String,
       username: { type: String, lowercase: true, trim: true },
       email: { type: String, lowercase: true, trim: true },
       emailVerifiedAt: Date,
@@ -29,8 +30,10 @@ const userSchema = new Schema(
 );
 
 userSchema.index({ 'github.username': 1 }, { unique: true, sparse: true });
+userSchema.index({ 'github.id': 1 }, { unique: true, sparse: true });
 
 userSchema.methods.comparePassword = function comparePassword(password: string) {
+  if (!this.passwordHash) return Promise.resolve(false);
   return bcrypt.compare(password, this.passwordHash);
 };
 

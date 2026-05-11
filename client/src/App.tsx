@@ -17,18 +17,20 @@ import {
   Users
 } from 'lucide-react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { api, clearToken, getToken, setToken, type Project, type Team, type User } from './api';
+import {
+  api,
+  clearToken,
+  getToken,
+  setToken,
+  type ArchitecturePlan,
+  type PlannerMessage,
+  type Project,
+  type Team,
+  type TeamResource,
+  type User
+} from './api';
 
 type View = 'dashboard' | 'create' | 'projects' | 'github';
-
-const projectTypes = [
-  { value: 'web_app', label: 'Web App' },
-  { value: 'mobile_app', label: 'Mobile App' },
-  { value: 'api_service', label: 'API Service' },
-  { value: 'data_science', label: 'Data Science' },
-  { value: 'iot', label: 'IoT' },
-  { value: 'research', label: 'Research' }
-];
 
 const starterMembers = [
   { name: 'Aarav Backend', email: 'backend@collab.ai', title: 'Backend Engineer', skills: [{ name: 'Node API', level: 5 }, { name: 'MongoDB', level: 4 }] },
@@ -46,11 +48,17 @@ export function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [login, setLogin] = useState({ identifier: 'demo@collab.ai', password: 'Password123!' });
-  const [registration, setRegistration] = useState({ name: '', email: '', githubUsername: '', password: '' });
-  const [registrationState, setRegistrationState] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
+  const [showPasswordLogin, setShowPasswordLogin] = useState(false);
+  const [login, setLogin] = useState({ identifier: '', password: '' });
+  const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
+  const [plannerMessages, setPlannerMessages] = useState<PlannerMessage[]>([
+    {
+      role: 'assistant',
+      content: 'Tell me what you want to build, your team size, tech stack, timeline, and any constraints. I will turn it into an architecture plan.'
+    }
+  ]);
+  const [plannerDraft, setPlannerDraft] = useState('');
+  const [architecturePlan, setArchitecturePlan] = useState<ArchitecturePlan | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -116,77 +124,78 @@ export function App() {
     }
   }
 
-  async function handleGithubRegistration(event: React.FormEvent) {
-    event.preventDefault();
+  async function handleGithubLogin() {
     setLoading(true);
     setNotice('');
-
     try {
-      const result = await api.startGithubRegistration(registration);
-      setRegistrationState(result.state);
-      setVerificationCode('');
-      setNotice(
-        result.emailDelivery.mode === 'smtp'
-          ? `Verification code sent to ${registration.email}.`
-          : 'Email service is not configured. Development OTP is printed in the API container logs.'
-      );
+      const { url } = await api.githubAuthUrl();
+      window.location.href = url;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Could not start GitHub registration');
+      setNotice(error instanceof Error ? error.message : 'GitHub OAuth is not configured yet. Add credentials in .env.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleVerifyRegistrationEmail(event: React.FormEvent) {
+  async function handleSetPassword(event: React.FormEvent) {
     event.preventDefault();
-    setLoading(true);
     setNotice('');
 
+    if (passwordForm.password !== passwordForm.confirmPassword) {
+      setNotice('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const result = await api.verifyRegistrationEmail({ state: registrationState, code: verificationCode });
-      window.location.href = result.url;
+      const result = await api.setPassword(passwordForm.password);
+      setUser(result.user);
+      setPasswordForm({ password: '', confirmPassword: '' });
+      setNotice('Password set. You can use direct sign in next time.');
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Could not verify email');
+      setNotice(error instanceof Error ? error.message : 'Could not set password');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+  async function handlePlannerSubmit(event: React.FormEvent) {
     event.preventDefault();
+    const prompt = plannerDraft.trim();
+    if (!prompt) return;
+
+    const nextMessages: PlannerMessage[] = [...plannerMessages, { role: 'user', content: prompt }];
+    setPlannerMessages(nextMessages);
+    setPlannerDraft('');
     setLoading(true);
     setNotice('');
-    const form = new FormData(event.currentTarget);
 
     try {
-      let teamId = String(form.get('teamId') ?? '');
-      if (teamId === 'new') {
-        const result = await api.createTeam({
-          name: String(form.get('teamName') || 'New Student Team'),
-          description: 'Auto-created from the project setup flow.',
-          members: starterMembers
-        });
-        teamId = result.team._id;
-      }
-
-      const result = await api.createProject({
-        name: String(form.get('name')),
-        description: String(form.get('description')),
-        type: String(form.get('type')),
-        teamId,
-        github: {
-          owner: String(form.get('githubOwner') || 'openai'),
-          repo: String(form.get('githubRepo') || 'openai-node'),
-          branch: String(form.get('branch') || 'main')
-        }
+      const teamResources = starterMembers.map((member) => ({
+        name: member.name,
+        role: member.title,
+        skills: member.skills.map((skill) => skill.name),
+        availability: 'Part-time student contributor'
+      }));
+      const result = await api.generateArchitecturePlan({
+        projectBrief: prompt,
+        teamSize: teamResources.length,
+        teamResources,
+        messages: nextMessages
       });
-
-      setNotice(`Generated ${result.project.name} with roles, workflow, tasks, and repository tracking.`);
-      setView('projects');
-      await refreshData();
-      setSelectedProjectId(result.project._id);
+      if (result.mode === 'plan') {
+        setArchitecturePlan(result.plan);
+      }
+      setPlannerMessages([
+        ...nextMessages,
+        {
+          role: 'assistant',
+          content: result.reply
+        }
+      ]);
+      if (result.warning) setNotice(result.warning);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Project creation failed');
+      setNotice(error instanceof Error ? error.message : 'Could not generate architecture plan');
     } finally {
       setLoading(false);
     }
@@ -224,20 +233,23 @@ export function App() {
           </div>
           <h1>AI Team Collab Agent</h1>
           <p>Structured project setup, role assignment, GitHub visibility, and progress tracking for student teams.</p>
-          <div className="auth-tabs">
-            <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
-              Sign in
+
+          <div className="oauth-stack">
+            <button className="primary github-auth-button" type="button" onClick={handleGithubLogin} disabled={loading}>
+              {loading ? <Loader2 className="spin" size={18} /> : <Github size={18} />}
+              Continue with GitHub
             </button>
-            <button className={authMode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}>
-              Register
+            <button className="ghost" type="button" onClick={() => setShowPasswordLogin((current) => !current)}>
+              {showPasswordLogin ? 'Hide password sign in' : 'Use app password'}
             </button>
           </div>
 
-          {authMode === 'login' ? (
+          {showPasswordLogin && (
             <form className="auth-form" onSubmit={handleLogin}>
               <label>
                 Email or GitHub username
                 <input
+                  required
                   autoCapitalize="none"
                   value={login.identifier}
                   onChange={(event) => setLogin({ ...login, identifier: event.target.value })}
@@ -253,79 +265,8 @@ export function App() {
                 Sign in
               </button>
             </form>
-          ) : (
-            <>
-              {!registrationState ? (
-                <form className="auth-form" onSubmit={handleGithubRegistration}>
-                  <label>
-                    Full name
-                    <input required value={registration.name} onChange={(event) => setRegistration({ ...registration, name: event.target.value })} />
-                  </label>
-                  <label>
-                    Verified GitHub email
-                    <input
-                      required
-                      type="email"
-                      autoCapitalize="none"
-                      value={registration.email}
-                      onChange={(event) => setRegistration({ ...registration, email: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    GitHub username
-                    <input
-                      required
-                      autoCapitalize="none"
-                      placeholder="octocat"
-                      value={registration.githubUsername}
-                      onChange={(event) => setRegistration({ ...registration, githubUsername: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    App password
-                    <input
-                      required
-                      type="password"
-                      minLength={8}
-                      value={registration.password}
-                      onChange={(event) => setRegistration({ ...registration, password: event.target.value })}
-                    />
-                  </label>
-                  <p className="auth-hint">First verify your email with an OTP, then GitHub will confirm the username and verified email.</p>
-                  {notice && <div className="notice">{notice}</div>}
-                  <button className="primary" disabled={loading}>
-                    {loading ? <Loader2 className="spin" size={18} /> : <ShieldCheck size={18} />}
-                    Send Verification Code
-                  </button>
-                </form>
-              ) : (
-                <form className="auth-form" onSubmit={handleVerifyRegistrationEmail}>
-                  <label>
-                    Email verification code
-                    <input
-                      required
-                      inputMode="numeric"
-                      maxLength={6}
-                      pattern="[0-9]{6}"
-                      value={verificationCode}
-                      onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                    />
-                  </label>
-                  <p className="auth-hint">Enter the 6-digit code sent to {registration.email}. After this, GitHub authorization will open.</p>
-                  {notice && <div className="notice">{notice}</div>}
-                  <div className="auth-actions">
-                    <button className="secondary" type="button" onClick={() => setRegistrationState('')}>
-                      Edit Details
-                    </button>
-                    <button className="primary" disabled={loading}>
-                      {loading ? <Loader2 className="spin" size={18} /> : <Github size={18} />}
-                      Verify and Continue
-                    </button>
-                  </div>
-                </form>
-              )}
-            </>
           )}
+          {!showPasswordLogin && notice && <div className="notice">{notice}</div>}
         </section>
       </main>
     );
@@ -377,9 +318,35 @@ export function App() {
         {loading && <div className="inline-loader"><Loader2 className="spin" size={18} /> Updating workspace</div>}
 
         {view === 'dashboard' && <Dashboard dashboard={dashboard} projects={projects} onOpenProjects={() => setView('projects')} />}
-        {view === 'create' && <CreateProject teams={teams} onSubmit={handleCreateProject} />}
+        {view === 'create' && (
+          <ProjectPlanner
+            messages={plannerMessages}
+            draft={plannerDraft}
+            plan={architecturePlan}
+            loading={loading}
+            teamResources={starterMembers.map((member) => ({
+              name: member.name,
+              role: member.title,
+              skills: member.skills.map((skill) => skill.name),
+              availability: 'Part-time student contributor'
+            }))}
+            onDraftChange={setPlannerDraft}
+            onSubmit={handlePlannerSubmit}
+          />
+        )}
         {view === 'projects' && <Projects projects={projects} selected={selectedProject} onSelect={setSelectedProjectId} />}
-        {view === 'github' && <GithubPanel projects={projects} selected={selectedProject} onConnect={handleGithubConnect} onSync={handleSync} />}
+        {view === 'github' && (
+          <GithubPanel
+            projects={projects}
+            selected={selectedProject}
+            passwordForm={passwordForm}
+            onPasswordFormChange={setPasswordForm}
+            onSetPassword={handleSetPassword}
+            onConnect={handleGithubConnect}
+            onSync={handleSync}
+            loading={loading}
+          />
+        )}
       </main>
     </div>
   );
@@ -447,90 +414,108 @@ function Dashboard({
   );
 }
 
-function CreateProject({ teams, onSubmit }: { teams: Team[]; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void }) {
+function ProjectPlanner({
+  messages,
+  draft,
+  plan,
+  loading,
+  teamResources,
+  onDraftChange,
+  onSubmit
+}: {
+  messages: PlannerMessage[];
+  draft: string;
+  plan: ArchitecturePlan | null;
+  loading: boolean;
+  teamResources: TeamResource[];
+  onDraftChange: (value: string) => void;
+  onSubmit: (event: React.FormEvent) => void;
+}) {
   return (
-    <form className="creation-layout" onSubmit={onSubmit}>
-      <section className="panel span-2 form-panel">
+    <section className="planner-layout">
+      <div className="panel planner-chat">
         <div className="panel-heading">
           <div>
-            <h2>Project Generator</h2>
-            <p>Select a type and the agent creates stack, folders, milestones, tasks, and role ownership.</p>
+            <h2>Architecture Chat</h2>
+            <p>Describe the product, users, deadline, team size, skills, and deployment constraints.</p>
           </div>
         </div>
-        <div className="form-grid">
-          <label>
-            Project name
-            <input name="name" defaultValue="AI Team Collab Agent" required />
-          </label>
-          <label>
-            Project type
-            <select name="type" defaultValue="web_app">
-              {projectTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="full">
-            Description
-            <textarea
-              name="description"
-              required
-              defaultValue="A web-based system that automates student team role assignment, project setup, GitHub contribution tracking, and progress dashboards."
-            />
-          </label>
-          <label>
-            Team
-            <select name="teamId" defaultValue={teams[0]?._id ?? 'new'}>
-              {teams.map((team) => (
-                <option key={team._id} value={team._id}>
-                  {team.name}
-                </option>
-              ))}
-              <option value="new">Create demo team</option>
-            </select>
-          </label>
-          <label>
-            New team name
-            <input name="teamName" defaultValue="Capstone Builders" />
-          </label>
-          <label>
-            GitHub owner
-            <input name="githubOwner" defaultValue="openai" />
-          </label>
-          <label>
-            GitHub repo
-            <input name="githubRepo" defaultValue="openai-node" />
-          </label>
-          <label>
-            Branch
-            <input name="branch" defaultValue="master" />
-          </label>
-        </div>
-        <button className="primary">
-          <Sparkles size={18} />
-          Generate Project
-        </button>
-      </section>
-
-      <aside className="panel">
-        <h2>Starter Team Skills</h2>
-        <div className="member-stack">
-          {starterMembers.map((member) => (
-            <div className="member-card" key={member.email}>
-              <strong>{member.name}</strong>
-              <span>{member.title}</span>
-              <div className="tags">
-                {member.skills.map((skill) => (
-                  <small key={skill.name}>{skill.name}</small>
-                ))}
-              </div>
+        <div className="chat-thread">
+          {messages.map((message, index) => (
+            <div className={`chat-bubble ${message.role}`} key={`${message.role}-${index}`}>
+              {message.content}
             </div>
           ))}
         </div>
-      </aside>
-    </form>
+        <form className="chat-composer" onSubmit={onSubmit}>
+          <textarea
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            placeholder="Example: We are building a campus event app with 4 students: React, Node, MongoDB, UI design. Need MVP in 3 weeks."
+          />
+          <button className="primary" disabled={loading || !draft.trim()}>
+            {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
+            Generate Architecture
+          </button>
+        </form>
+      </div>
+
+      <div className="planner-side">
+        <aside className="panel">
+          <h2>Team Resources</h2>
+          <div className="member-stack">
+            {teamResources.map((member) => (
+              <div className="member-card" key={member.name}>
+                <strong>{member.name}</strong>
+                <span>{member.role}</span>
+                <div className="tags">
+                  {member.skills.map((skill) => (
+                    <small key={skill}>{skill}</small>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        {plan && <ArchitecturePreview plan={plan} />}
+      </div>
+    </section>
+  );
+}
+
+function ArchitecturePreview({ plan }: { plan: ArchitecturePlan }) {
+  return (
+    <aside className="panel plan-preview">
+      <div className="panel-heading">
+        <div>
+          <h2>{plan.projectName}</h2>
+          <p>{plan.summary}</p>
+        </div>
+        <span className="status active">{formatArchitectureStyle(plan.architectureStyle)}</span>
+      </div>
+      <DetailBlock title="Recommended Stack" items={plan.recommendedStack} icon={<Boxes />} />
+      <div className="plan-section">
+        <h3>Why This Architecture</h3>
+        <p>{plan.architectureReason}</p>
+      </div>
+      <div className="plan-section">
+        <h3>Modules</h3>
+        <div className="module-list">
+          {plan.modules.map((module) => (
+            <div className="module-row" key={module.name}>
+              <strong>{module.name}</strong>
+              <span>{module.responsibility}</span>
+              {module.ownerRole && <small>{module.ownerRole}</small>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <DetailBlock title="Data Model" items={plan.dataModel} icon={<Boxes />} />
+      <DetailBlock title="API Plan" items={plan.apiPlan} icon={<GitBranch />} />
+      <DetailBlock title="Milestones" items={plan.milestones} icon={<CheckCircle2 />} />
+      <DetailBlock title="Risks" items={plan.risks} icon={<ShieldCheck />} />
+    </aside>
   );
 }
 
@@ -596,13 +581,21 @@ function Projects({ projects, selected, onSelect }: { projects: Project[]; selec
 function GithubPanel({
   projects,
   selected,
+  passwordForm,
+  onPasswordFormChange,
+  onSetPassword,
   onConnect,
-  onSync
+  onSync,
+  loading
 }: {
   projects: Project[];
   selected?: Project;
+  passwordForm: { password: string; confirmPassword: string };
+  onPasswordFormChange: (value: { password: string; confirmPassword: string }) => void;
+  onSetPassword: (event: React.FormEvent) => void;
   onConnect: () => void;
   onSync: (projectId: string) => void;
+  loading: boolean;
 }) {
   return (
     <section className="content-grid">
@@ -637,6 +630,35 @@ function GithubPanel({
           ))}
         </div>
       </div>
+      <aside className="panel">
+        <h2>Set Password</h2>
+        <form className="auth-form compact-form" onSubmit={onSetPassword}>
+          <label>
+            New password
+            <input
+              required
+              type="password"
+              minLength={8}
+              value={passwordForm.password}
+              onChange={(event) => onPasswordFormChange({ ...passwordForm, password: event.target.value })}
+            />
+          </label>
+          <label>
+            Confirm password
+            <input
+              required
+              type="password"
+              minLength={8}
+              value={passwordForm.confirmPassword}
+              onChange={(event) => onPasswordFormChange({ ...passwordForm, confirmPassword: event.target.value })}
+            />
+          </label>
+          <button className="secondary" disabled={loading}>
+            {loading ? <Loader2 className="spin" size={18} /> : <ShieldCheck size={18} />}
+            Set Password
+          </button>
+        </form>
+      </aside>
       <aside className="panel">
         <h2>Recent Repository Events</h2>
         <div className="event-stack">
@@ -734,4 +756,11 @@ function viewTitle(view: View) {
     projects: 'Projects and Role Assignments',
     github: 'GitHub Connections'
   }[view];
+}
+
+function formatArchitectureStyle(style: ArchitecturePlan['architectureStyle']) {
+  return style
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }

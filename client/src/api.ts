@@ -68,6 +68,32 @@ export type Project = {
 
 export type GithubStats = NonNullable<NonNullable<Project['github']>['stats']>;
 
+export type PlannerMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type TeamResource = {
+  name: string;
+  role?: string;
+  skills: string[];
+  availability?: string;
+};
+
+export type ArchitecturePlan = {
+  projectName: string;
+  summary: string;
+  architectureStyle: 'monolith' | 'modular_monolith' | 'microservices' | 'serverless' | 'hybrid';
+  architectureReason: string;
+  recommendedStack: string[];
+  modules: { name: string; responsibility: string; ownerRole?: string }[];
+  dataModel: string[];
+  apiPlan: string[];
+  milestones: string[];
+  risks: string[];
+  nextQuestions: string[];
+};
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -100,25 +126,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  githubAuthUrl: () => request<{ url: string }>('/auth/github'),
   login: (identifier: string, password: string) =>
     request<{ user: User; token: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, password })
     }),
-  startGithubRegistration: (body: { name: string; email: string; githubUsername: string; password: string }) =>
-    request<{
-      state: string;
-      requiresEmailVerification: boolean;
-      emailDelivery: { delivered: boolean; mode: 'smtp' | 'console' };
-      expiresInMinutes: number;
-    }>('/auth/register/github', {
+  setPassword: (password: string) =>
+    request<{ user: User }>('/auth/set-password', {
       method: 'POST',
-      body: JSON.stringify(body)
-    }),
-  verifyRegistrationEmail: (body: { state: string; code: string }) =>
-    request<{ url: string }>('/auth/register/github/verify-email', {
-      method: 'POST',
-      body: JSON.stringify(body)
+      body: JSON.stringify({ password })
     }),
   me: () => request<{ user: User }>('/auth/me'),
   teams: () => request<{ teams: Team[] }>('/teams'),
@@ -133,6 +150,19 @@ export const api = {
       stats: { activeProjects: number; completedTasks: number; totalTasks: number; commits: number; pullRequests: number };
       recentProjects: Project[];
     }>('/projects/dashboard'),
+  generateArchitecturePlan: (body: {
+    projectBrief: string;
+    teamSize?: number;
+    teamResources: TeamResource[];
+    messages: PlannerMessage[];
+  }) =>
+    request<
+      | { mode: 'question'; reply: string; missingDetails?: string[]; source: 'conversation' | 'llm'; warning?: string }
+      | { mode: 'plan'; reply: string; plan: ArchitecturePlan; source: 'llm' | 'fallback'; warning?: string }
+    >('/projects/plan/chat', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
   createProject: (body: unknown) =>
     request<{ project: Project }>('/projects', {
       method: 'POST',

@@ -1,12 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
-import { nanoid } from 'nanoid';
 import { env } from '../../config/env.js';
 import { AppError } from '../../shared/errors.js';
-import { githubOAuthUrl, getGithubIdentity } from '../github/github.service.js';
-import { sendVerificationEmail } from '../notifications/email.service.js';
+import { getGithubIdentity } from '../github/github.service.js';
 import { UserModel } from '../users/user.model.js';
-import { PendingRegistrationModel } from './pending-registration.model.js';
 
 export function signToken(user: { _id: unknown; role: string }) {
   return jwt.sign({ sub: String(user._id), role: user.role }, env.JWT_SECRET, {
@@ -24,27 +21,12 @@ function normalizeIdentifier(value: string) {
   return value.trim().replace(/^@/, '').toLowerCase();
 }
 
-function makeOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-export async function registerUser(input: {
-  name: string;
-  email: string;
-  password: string;
-  skills?: { name: string; level: number }[];
-}) {
-  const existing = await UserModel.findOne({ email: input.email });
-  if (existing) throw new AppError('Email is already registered', 409);
-
-  const user = await UserModel.create({
-    name: input.name,
-    email: input.email,
-    passwordHash: await bcrypt.hash(input.password, 12),
-    skills: input.skills ?? []
-  });
-
-  return { user: publicUser(user), token: signToken(user) };
+function primaryVerifiedGithubEmail(
+  emails: Awaited<ReturnType<typeof getGithubIdentity>>['emails'],
+  fallbackUsername: string
+) {
+  const verified = emails.find((email) => email.primary && email.verified) ?? emails.find((email) => email.verified);
+  return verified?.email.toLowerCase() ?? `${fallbackUsername}@users.noreply.github.com`;
 }
 
 export async function loginUser(identifier: string, password: string) {
@@ -53,119 +35,53 @@ export async function loginUser(identifier: string, password: string) {
     $or: [{ email: normalized }, { 'github.username': normalized }]
   }).select('+passwordHash');
 
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
     throw new AppError('Invalid login or password', 401);
   }
 
   return { user: publicUser(user), token: signToken(user) };
 }
 
-export async function startGithubRegistration(input: {
-  name: string;
-  email: string;
-  password: string;
-  githubUsername: string;
-  skills?: { name: string; level: number }[];
-}) {
-  const email = input.email.trim().toLowerCase();
-  const githubUsername = normalizeIdentifier(input.githubUsername);
-
-  const existing = await UserModel.findOne({
-    $or: [{ email }, { 'github.username': githubUsername }]
-  });
-  if (existing) throw new AppError('A user already exists with that email or GitHub username', 409);
-
-  const state = nanoid(32);
-  const otp = makeOtp();
-  const now = Date.now();
-  await PendingRegistrationModel.findOneAndUpdate(
-    { email },
-    {
-      state,
-      name: input.name,
-      email,
-      githubUsername,
-      passwordHash: await bcrypt.hash(input.password, 12),
-      emailOtpHash: await bcrypt.hash(otp, 12),
-      emailOtpExpiresAt: new Date(now + env.EMAIL_VERIFICATION_TTL_MINUTES * 60 * 1000),
-      emailVerifiedAt: undefined,
-      skills: input.skills ?? [],
-      expiresAt: new Date(now + 30 * 60 * 1000)
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-  const emailDelivery = await sendVerificationEmail({ to: email, name: input.name, code: otp });
-
-  return {
-    state,
-    requiresEmailVerification: true,
-    emailDelivery,
-    expiresInMinutes: env.EMAIL_VERIFICATION_TTL_MINUTES
-  };
+export async function setUserPassword(userId: string, password: string) {
+  const passwordHash = await bcrypt.hash(password, 12);
+  const user = await UserModel.findByIdAndUpdate(userId, { passwordHash }, { new: true });
+  if (!user) throw new AppError('User not found', 404);
+  return { user: publicUser(user) };
 }
 
-export async function verifyRegistrationEmail(input: { state: string; code: string }) {
-  const pending = await PendingRegistrationModel.findOne({ state: input.state });
-  if (!pending || pending.expiresAt.getTime() < Date.now()) {
-    throw new AppError('Registration session expired. Please start again.', 400);
-  }
-
-  if (pending.emailOtpExpiresAt.getTime() < Date.now()) {
-    throw new AppError('Verification code expired. Please start registration again.', 400);
-  }
-
-  if (!(await bcrypt.compare(input.code.trim(), pending.emailOtpHash))) {
-    throw new AppError('Invalid verification code', 401);
-  }
-
-  pending.emailVerifiedAt = new Date();
-  await pending.save();
-
-  return {
-    url: githubOAuthUrl(`signup:${pending.state}`)
-  };
-}
-
-export async function completeGithubRegistration(state: string, accessToken: string) {
-  const pending = await PendingRegistrationModel.findOne({ state });
-  if (!pending || pending.expiresAt.getTime() < Date.now()) {
-    throw new AppError('Registration session expired. Please start again.', 400);
-  }
-
-  if (!pending.emailVerifiedAt) {
-    throw new AppError('Email must be verified before connecting GitHub', 403);
-  }
-
-  const existing = await UserModel.findOne({
-    $or: [{ email: pending.email }, { 'github.username': pending.githubUsername }]
-  });
-  if (existing) throw new AppError('A user already exists with that email or GitHub username', 409);
-
+export async function completeGithubLogin(accessToken: string) {
   const identity = await getGithubIdentity(accessToken);
-  if (identity.profile.login.toLowerCase() !== pending.githubUsername) {
-    throw new AppError(`GitHub account mismatch. Expected @${pending.githubUsername}, got @${identity.profile.login}.`, 403);
-  }
+  const githubId = String(identity.profile.id);
+  const username = identity.profile.login.toLowerCase();
+  const email = primaryVerifiedGithubEmail(identity.emails, username);
 
-  const verifiedEmail = identity.emails.find((email) => email.email.toLowerCase() === pending.email && email.verified);
-  if (!verifiedEmail) {
-    throw new AppError('GitHub did not confirm that this email belongs to the account. Use a verified email from GitHub.', 403);
-  }
-
-  const user = await UserModel.create({
-    name: pending.name,
-    email: pending.email,
-    passwordHash: pending.passwordHash,
-    skills: pending.skills,
-    avatarUrl: identity.profile.avatar_url,
-    github: {
-      username: identity.profile.login.toLowerCase(),
-      email: verifiedEmail.email.toLowerCase(),
-      emailVerifiedAt: new Date(),
-      accessToken,
-      connectedAt: new Date()
-    }
+  let user = await UserModel.findOne({
+    $or: [{ 'github.id': githubId }, { 'github.username': username }, { email }]
   });
 
-  await PendingRegistrationModel.deleteOne({ _id: pending._id });
+  const github = {
+    id: githubId,
+    username,
+    email,
+    emailVerifiedAt: new Date(),
+    accessToken,
+    connectedAt: new Date()
+  };
+
+  if (!user) {
+    user = await UserModel.create({
+      name: identity.profile.name || username,
+      email,
+      avatarUrl: identity.profile.avatar_url,
+      github
+    });
+  } else {
+    user.name = user.name || identity.profile.name || username;
+    user.email = user.email || email;
+    user.avatarUrl = identity.profile.avatar_url;
+    user.github = github;
+    await user.save();
+  }
+
   return { user: publicUser(user), token: signToken(user) };
 }

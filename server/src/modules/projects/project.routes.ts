@@ -6,6 +6,7 @@ import { validate } from '../../shared/validate.js';
 import { TeamModel } from '../teams/team.model.js';
 import { ProjectModel } from './project.model.js';
 import { generateProjectPlan } from './generator.js';
+import { generateArchitecturePlan } from './planner.service.js';
 
 export const projectRouter = Router();
 projectRouter.use(requireAuth);
@@ -24,6 +25,31 @@ const createProjectSchema = z.object({
         branch: z.string().default('main')
       })
       .optional()
+  })
+});
+
+const plannerChatSchema = z.object({
+  body: z.object({
+    projectBrief: z.string().min(1),
+    teamSize: z.number().int().min(1).max(100).optional(),
+    teamResources: z
+      .array(
+        z.object({
+          name: z.string().min(1),
+          role: z.string().optional(),
+          skills: z.array(z.string().min(1)).default([]),
+          availability: z.string().optional()
+        })
+      )
+      .default([]),
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(['user', 'assistant']),
+          content: z.string().min(1)
+        })
+      )
+      .default([])
   })
 });
 
@@ -54,6 +80,14 @@ projectRouter.get(
       },
       recentProjects: projects.slice(0, 4)
     });
+  })
+);
+
+projectRouter.post(
+  '/plan/chat',
+  validate(plannerChatSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await generateArchitecturePlan(req.body));
   })
 );
 

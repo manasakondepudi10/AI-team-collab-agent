@@ -4,10 +4,18 @@ import { env } from '../../config/env.js';
 import { asyncHandler, AppError } from '../../shared/errors.js';
 import { validate } from '../../shared/validate.js';
 import { requireAuth } from '../auth/auth.middleware.js';
-import { completeGithubRegistration, signToken } from '../auth/auth.service.js';
+import { completeGithubLogin, signToken } from '../auth/auth.service.js';
 import { UserModel } from '../users/user.model.js';
 import { ProjectModel } from '../projects/project.model.js';
-import { connectGithubAccount, exchangeGithubCode, githubConnectUrl, syncRepository, verifyGithubConnectState, verifyGithubSignature } from './github.service.js';
+import {
+  connectGithubAccount,
+  exchangeGithubCode,
+  githubConnectUrl,
+  syncRepository,
+  verifyGithubConnectState,
+  verifyGithubLoginState,
+  verifyGithubSignature
+} from './github.service.js';
 
 export const githubRouter = Router();
 
@@ -29,9 +37,10 @@ githubRouter.get(
     try {
       const accessToken = await exchangeGithubCode(code);
 
-      if (state.startsWith('signup:')) {
-        const result = await completeGithubRegistration(state.slice('signup:'.length), accessToken);
-        const params = new URLSearchParams({ token: result.token, github: 'registered' });
+      if (state.startsWith('login:')) {
+        verifyGithubLoginState(state.slice('login:'.length));
+        const result = await completeGithubLogin(accessToken);
+        const params = new URLSearchParams({ token: result.token, github: 'authenticated' });
         return res.redirect(`${env.CLIENT_URL}/?${params.toString()}`);
       }
 

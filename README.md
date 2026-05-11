@@ -22,9 +22,9 @@ The backend seeds a demo owner on first boot:
 - GitHub username: `demo-lead`
 - Password: `Password123!`
 
-Existing users can sign in with either their email or connected GitHub username plus their app password.
+New users start with **Continue with GitHub**. After GitHub redirects back, the app stores the GitHub account details and access token in MongoDB, then signs the user in.
 
-New users register through GitHub OAuth. The app creates a pending registration, sends the user to GitHub, verifies that the authorized GitHub username matches the requested username, and confirms the entered email exists as a verified email on that GitHub account before saving the user.
+Logged-in users can open the GitHub page and use **Set Password**. After that, they can sign in directly with their email or GitHub username plus the app password.
 
 ## GitHub Setup
 
@@ -48,25 +48,18 @@ http://localhost:5000/api/github/webhook
 
 Subscribe to `push`, `pull_request`, and `ping`.
 
-## Email Verification Setup
+## Groq Planner Setup
 
-New user registration first sends a 6-digit email OTP. If SMTP is not configured, the app still works in development and prints the OTP in API logs:
+The Create Project page uses Groq's OpenAI-compatible chat completions API.
 
-```bash
-docker compose logs api --tail 80
-```
-
-For real emails with Gmail, create a Gmail app password and set:
+Add these to `.env`:
 
 ```env
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-gmail-address@gmail.com
-SMTP_PASS=your-gmail-app-password
-SMTP_FROM="AI Team Collab Agent <your-gmail-address@gmail.com>"
-EMAIL_VERIFICATION_TTL_MINUTES=10
+GROQ_API_KEY=your-real-groq-api-key
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
+
+If `GROQ_API_KEY` is empty, the app still returns a basic fallback architecture plan so the screen does not break.
 
 After editing `.env`, restart:
 
