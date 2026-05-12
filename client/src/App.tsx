@@ -39,6 +39,13 @@ const starterMembers = [
   { name: 'Riya QA', email: 'qa@collab.ai', title: 'QA Engineer', skills: [{ name: 'Testing', level: 4 }, { name: 'GitHub', level: 3 }] }
 ];
 
+const initialPlannerMessages: PlannerMessage[] = [
+  {
+    role: 'assistant',
+    content: 'Tell me what you want to build, your team size, tech stack, timeline, and any constraints. I will turn it into an architecture plan.'
+  }
+];
+
 export function App() {
   const [tokenReady, setTokenReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -52,12 +59,7 @@ export function App() {
   const [showPasswordLogin, setShowPasswordLogin] = useState(false);
   const [login, setLogin] = useState({ identifier: '', password: '' });
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
-  const [plannerMessages, setPlannerMessages] = useState<PlannerMessage[]>([
-    {
-      role: 'assistant',
-      content: 'Tell me what you want to build, your team size, tech stack, timeline, and any constraints. I will turn it into an architecture plan.'
-    }
-  ]);
+  const [plannerMessages, setPlannerMessages] = useState<PlannerMessage[]>(initialPlannerMessages);
   const [plannerDraft, setPlannerDraft] = useState('');
   const [architecturePlan, setArchitecturePlan] = useState<ArchitecturePlan | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -206,16 +208,11 @@ export function App() {
   async function handleConfirmCreateProject() {
     if (!architecturePlan) return;
 
-    const team = teams[0];
-    if (!team) {
-      setNotice('Create a team first so the project can be assigned.');
-      return;
-    }
-
     setCreatingProject(true);
     setNotice('');
 
     try {
+      const team = teams[0] ?? (await api.createTeam(buildTeamFromPlan(architecturePlan))).team;
       const result = await api.createProject({
         name: architecturePlan.projectName,
         description: architecturePlan.summary,
@@ -241,6 +238,9 @@ export function App() {
       });
       await refreshData();
       setSelectedProjectId(result.project._id);
+      setPlannerMessages(initialPlannerMessages);
+      setPlannerDraft('');
+      setArchitecturePlan(null);
       setView('projects');
       setNotice(`${result.project.name} created and added to Projects.`);
     } catch (error) {
@@ -839,4 +839,27 @@ function inferProjectType(plan: ArchitecturePlan): Project['type'] {
   if (text.includes('research') || text.includes('study')) return 'research';
 
   return 'web_app';
+}
+
+function buildTeamFromPlan(plan: ArchitecturePlan) {
+  const owners = Array.from(new Set(plan.modules.map((module) => module.ownerRole?.trim()).filter((owner): owner is string => Boolean(owner))));
+  const members = owners.map((owner, index) => ({
+    name: owner,
+    email: `${slugify(owner)}-${index + 1}@collab.local`,
+    title: 'Project Contributor',
+    skills: plan.recommendedStack.slice(0, 3).map((skill) => ({ name: skill, level: 4 }))
+  }));
+
+  return {
+    name: `${plan.projectName} Team`,
+    description: `Auto-created from the confirmed architecture plan for ${plan.projectName}.`,
+    members
+  };
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'member';
 }
