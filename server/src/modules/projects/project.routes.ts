@@ -18,6 +18,33 @@ const createProjectSchema = z.object({
     type: z.enum(['web_app', 'mobile_app', 'api_service', 'data_science', 'iot', 'research']),
     teamId: z.string().min(1),
     dueDate: z.string().datetime().optional(),
+    structure: z
+      .object({
+        stack: z.array(z.string().min(1)).default([]),
+        folders: z.array(z.string().min(1)).default([]),
+        workflow: z.array(z.string().min(1)).default([]),
+        milestones: z.array(z.string().min(1)).default([])
+      })
+      .optional(),
+    generatedRoles: z
+      .array(
+        z.object({
+          role: z.string().min(1),
+          confidence: z.number().min(0).max(1).default(0.7),
+          reason: z.string().optional()
+        })
+      )
+      .optional(),
+    tasks: z
+      .array(
+        z.object({
+          title: z.string().min(1),
+          description: z.string().optional(),
+          status: z.enum(['todo', 'in_progress', 'review', 'done']).default('todo'),
+          priority: z.enum(['low', 'medium', 'high']).default('medium')
+        })
+      )
+      .optional(),
     github: z
       .object({
         owner: z.string().min(1),
@@ -106,9 +133,9 @@ projectRouter.post(
       owner: req.user?.id,
       team: team._id,
       dueDate: req.body.dueDate,
-      structure: plan.structure,
-      generatedRoles: plan.generatedRoles,
-      tasks: plan.tasks,
+      structure: req.body.structure ?? plan.structure,
+      generatedRoles: req.body.generatedRoles ?? plan.generatedRoles,
+      tasks: req.body.tasks ?? plan.tasks,
       github: req.body.github ? { ...req.body.github, connectedAt: new Date() } : undefined
     });
 

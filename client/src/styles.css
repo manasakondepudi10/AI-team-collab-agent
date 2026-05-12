@@ -520,6 +520,18 @@ textarea {
   gap: 16px;
 }
 
+.confirm-create {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  padding-top: 4px;
+  background: #fff;
+}
+
+.confirm-create .primary {
+  width: 100%;
+}
+
 .plan-section {
   display: grid;
   gap: 8px;

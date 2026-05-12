@@ -60,6 +60,7 @@ export function App() {
   ]);
   const [plannerDraft, setPlannerDraft] = useState('');
   const [architecturePlan, setArchitecturePlan] = useState<ArchitecturePlan | null>(null);
+  const [creatingProject, setCreatingProject] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -202,6 +203,53 @@ export function App() {
     }
   }
 
+  async function handleConfirmCreateProject() {
+    if (!architecturePlan) return;
+
+    const team = teams[0];
+    if (!team) {
+      setNotice('Create a team first so the project can be assigned.');
+      return;
+    }
+
+    setCreatingProject(true);
+    setNotice('');
+
+    try {
+      const result = await api.createProject({
+        name: architecturePlan.projectName,
+        description: architecturePlan.summary,
+        type: inferProjectType(architecturePlan),
+        teamId: team._id,
+        structure: {
+          stack: architecturePlan.recommendedStack,
+          folders: architecturePlan.modules.map((module) => module.name),
+          workflow: architecturePlan.apiPlan,
+          milestones: architecturePlan.milestones
+        },
+        generatedRoles: architecturePlan.modules.map((module) => ({
+          role: module.ownerRole || module.name,
+          confidence: 0.82,
+          reason: module.responsibility
+        })),
+        tasks: architecturePlan.milestones.map((milestone, index) => ({
+          title: milestone,
+          description: index < architecturePlan.risks.length ? architecturePlan.risks[index] : `Milestone for ${architecturePlan.projectName}.`,
+          status: index === 0 ? 'in_progress' : 'todo',
+          priority: index < 2 ? 'high' : 'medium'
+        }))
+      });
+      await refreshData();
+      setSelectedProjectId(result.project._id);
+      setView('projects');
+      setNotice(`${result.project.name} created and added to Projects.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not create project');
+    } finally {
+      setCreatingProject(false);
+    }
+  }
+
   async function handleGithubConnect() {
     try {
       const { url } = await api.githubConnect();
@@ -326,6 +374,7 @@ export function App() {
             draft={plannerDraft}
             plan={architecturePlan}
             loading={loading}
+            creatingProject={creatingProject}
             teamResources={starterMembers.map((member) => ({
               name: member.name,
               role: member.title,
@@ -334,6 +383,7 @@ export function App() {
             }))}
             onDraftChange={setPlannerDraft}
             onSubmit={handlePlannerSubmit}
+            onConfirmCreateProject={handleConfirmCreateProject}
           />
         )}
         {view === 'projects' && <Projects projects={projects} selected={selectedProject} onSelect={setSelectedProjectId} />}
@@ -422,17 +472,21 @@ function ProjectPlanner({
   draft,
   plan,
   loading,
+  creatingProject,
   teamResources,
   onDraftChange,
-  onSubmit
+  onSubmit,
+  onConfirmCreateProject
 }: {
   messages: PlannerMessage[];
   draft: string;
   plan: ArchitecturePlan | null;
   loading: boolean;
+  creatingProject: boolean;
   teamResources: TeamResource[];
   onDraftChange: (value: string) => void;
   onSubmit: (event: React.FormEvent) => void;
+  onConfirmCreateProject: () => void;
 }) {
   return (
     <section className="planner-layout">
@@ -481,13 +535,13 @@ function ProjectPlanner({
           </div>
         </aside>
 
-        {plan && <ArchitecturePreview plan={plan} />}
+        {plan && <ArchitecturePreview plan={plan} creating={creatingProject} onConfirm={onConfirmCreateProject} />}
       </div>
     </section>
   );
 }
 
-function ArchitecturePreview({ plan }: { plan: ArchitecturePlan }) {
+function ArchitecturePreview({ plan, creating, onConfirm }: { plan: ArchitecturePlan; creating: boolean; onConfirm: () => void }) {
   return (
     <aside className="panel plan-preview">
       <div className="panel-heading">
@@ -518,6 +572,12 @@ function ArchitecturePreview({ plan }: { plan: ArchitecturePlan }) {
       <DetailBlock title="API Plan" items={plan.apiPlan} icon={<GitBranch />} />
       <DetailBlock title="Milestones" items={plan.milestones} icon={<CheckCircle2 />} />
       <DetailBlock title="Risks" items={plan.risks} icon={<ShieldCheck />} />
+      <div className="confirm-create">
+        <button className="primary" type="button" onClick={onConfirm} disabled={creating}>
+          {creating ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
+          Confirm Create Project
+        </button>
+      </div>
     </aside>
   );
 }
@@ -767,4 +827,16 @@ function formatArchitectureStyle(style: ArchitecturePlan['architectureStyle']) {
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+function inferProjectType(plan: ArchitecturePlan): Project['type'] {
+  const text = `${plan.projectName} ${plan.summary} ${plan.recommendedStack.join(' ')} ${plan.modules.map((module) => module.name).join(' ')}`.toLowerCase();
+
+  if (text.includes('mobile') || text.includes('react native') || text.includes('expo')) return 'mobile_app';
+  if (text.includes('api') && !text.includes('react')) return 'api_service';
+  if (text.includes('data') || text.includes('machine learning') || text.includes('analytics')) return 'data_science';
+  if (text.includes('iot') || text.includes('mqtt') || text.includes('device')) return 'iot';
+  if (text.includes('research') || text.includes('study')) return 'research';
+
+  return 'web_app';
 }
