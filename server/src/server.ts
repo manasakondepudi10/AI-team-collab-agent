@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 import { errorHandler, notFound } from './shared/errors.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { githubRouter } from './modules/github/github.routes.js';
+import { projectManagementRouter } from './modules/project-management/project-management.routes.js';
 import { projectRouter } from './modules/projects/project.routes.js';
 import { teamRouter } from './modules/teams/team.routes.js';
 
@@ -31,6 +32,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/teams', teamRouter);
 app.use('/api/projects', projectRouter);
 app.use('/api/github', githubRouter);
+app.use('/api/project-management', projectManagementRouter);
 
 app.use(notFound);
 app.use(errorHandler);

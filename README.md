@@ -72,3 +72,15 @@ docker compose up --build
 - `server`: Express, TypeScript, MongoDB/Mongoose, JWT auth, project/team management, GitHub OAuth, sync, and webhook ingestion.
 - `client`: Vite, React, TypeScript, professional dashboard UI with project generation, team skill inputs, GitHub insights, and admin-ready sections.
 - `docker-compose.yml`: MongoDB, API, and frontend with hot reload for development.
+
+## Team Goal & Project Management
+
+The new goal-management system is isolated under `/api/project-management` and the frontend `Goals` view. It adds nested goal trees, assignments, GitHub repository connection, collaborator invitations, progress syncing, activity logs, and in-app notifications without replacing existing auth, GitHub login, project APIs, or the architecture chatbot.
+
+Run the index migration after pulling the feature:
+
+```bash
+npm --prefix server run migrate
+```
+
+More details: [docs/project-management.md](docs/project-management.md)

@@ -17,6 +17,7 @@ import {
   Users
 } from 'lucide-react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { GoalManagement } from './features/projectManagement/GoalManagement';
 import {
   api,
   clearToken,
@@ -30,7 +31,7 @@ import {
   type User
 } from './api';
 
-type View = 'dashboard' | 'create' | 'projects' | 'github';
+type View = 'dashboard' | 'create' | 'projects' | 'goals' | 'github';
 
 const starterMembers = [
   { name: 'Aarav Backend', email: 'backend@collab.ai', title: 'Backend Engineer', skills: [{ name: 'Node API', level: 5 }, { name: 'MongoDB', level: 4 }] },
@@ -288,6 +289,7 @@ export function App() {
           <NavButton active={view === 'dashboard'} icon={<LayoutDashboard size={18} />} label="Dashboard" onClick={() => setView('dashboard')} />
           <NavButton active={view === 'create'} icon={<Plus size={18} />} label="Create Project" onClick={() => setView('create')} />
           <NavButton active={view === 'projects'} icon={<FolderKanban size={18} />} label="Projects" onClick={() => setView('projects')} />
+          <NavButton active={view === 'goals'} icon={<CheckCircle2 size={18} />} label="Goals" onClick={() => setView('goals')} />
           <NavButton active={view === 'github'} icon={<Github size={18} />} label="GitHub" onClick={() => setView('github')} />
         </nav>
         <button
@@ -335,6 +337,7 @@ export function App() {
           />
         )}
         {view === 'projects' && <Projects projects={projects} selected={selectedProject} onSelect={setSelectedProjectId} />}
+        {view === 'goals' && <GoalManagement projects={projects} teams={teams} onNotice={setNotice} />}
         {view === 'github' && (
           <GithubPanel
             projects={projects}
@@ -754,6 +757,7 @@ function viewTitle(view: View) {
     dashboard: 'Team Project Dashboard',
     create: 'Create Structured Project',
     projects: 'Projects and Role Assignments',
+    goals: 'Team Goals and Progress',
     github: 'GitHub Connections'
   }[view];
 }

@@ -68,6 +68,93 @@ export type Project = {
 
 export type GithubStats = NonNullable<NonNullable<Project['github']>['stats']>;
 
+export type GoalStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
+export type GoalPriority = 'low' | 'medium' | 'high' | 'critical';
+export type GoalNodeType = 'folder' | 'task' | 'module';
+
+export type GoalNode = {
+  _id: string;
+  project: string;
+  title: string;
+  type: GoalNodeType;
+  parentId?: string | null;
+  assignedMembers: User[];
+  githubPath: string;
+  completionStatus: GoalStatus;
+  progressPercentage: number;
+  manualProgressOverride: boolean;
+  description: string;
+  priority: GoalPriority;
+  deadline?: string;
+  requiredFiles: string[];
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  children?: GoalNode[];
+};
+
+export type Assignment = {
+  _id: string;
+  project: string;
+  goal: GoalNode;
+  assignedTo: User;
+  assignedBy: User;
+  status: GoalStatus;
+  priority: GoalPriority;
+  description: string;
+  deadline?: string;
+  completedAt?: string;
+  createdAt: string;
+};
+
+export type GithubIntegration = {
+  _id: string;
+  project: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  githubRepoId?: string;
+  isPrivate: boolean;
+  collaborators: {
+    githubId?: string;
+    username?: string;
+    email?: string;
+    role?: string;
+    invitationStatus: 'pending' | 'accepted' | 'failed' | 'synced' | 'unknown';
+    invitedAt?: string;
+    lastSyncedAt?: string;
+  }[];
+  lastSyncedAt?: string;
+  syncStatus: 'idle' | 'syncing' | 'failed';
+  syncError?: string;
+};
+
+export type ActivityLog = {
+  _id: string;
+  action: string;
+  entityType: string;
+  metadata?: Record<string, unknown>;
+  actor?: User;
+  createdAt: string;
+};
+
+export type NotificationItem = {
+  _id: string;
+  type: 'assignment' | 'github_sync' | 'deadline' | 'completion' | 'system';
+  title: string;
+  message: string;
+  readAt?: string;
+  createdAt: string;
+};
+
+export type ManagementOverview = {
+  totalGoals: number;
+  averageProgress: number;
+  statusCounts: Record<string, number>;
+  memberProgress: { member: User; total: number; done: number; progress: number }[];
+  health: 'on_track' | 'blocked' | 'watch' | 'needs_attention';
+};
+
 export type PlannerMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -173,4 +260,67 @@ export const api = {
       method: 'POST'
     }),
   githubConnect: () => request<{ url: string }>('/github/connect')
+  ,
+  goals: (projectId: string) => request<{ goals: GoalNode[]; tree: GoalNode[] }>(`/project-management/projects/${projectId}/goals`),
+  createGoal: (projectId: string, body: Partial<GoalNode> & { title: string; type: GoalNodeType }) =>
+    request<{ goal: GoalNode }>(`/project-management/projects/${projectId}/goals`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  updateGoal: (goalId: string, body: Partial<GoalNode>) =>
+    request<{ goal: GoalNode }>(`/project-management/goals/${goalId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    }),
+  deleteGoal: (goalId: string) =>
+    request<{ deleted: number }>(`/project-management/goals/${goalId}`, {
+      method: 'DELETE'
+    }),
+  assignGoal: (
+    goalId: string,
+    body: { assignedMemberIds: string[]; description?: string; priority?: GoalPriority; status?: GoalStatus; deadline?: string }
+  ) =>
+    request<{ goal: GoalNode; assignments: Assignment[] }>(`/project-management/goals/${goalId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  managementOverview: (projectId: string) =>
+    request<{
+      overview: ManagementOverview;
+      goals: GoalNode[];
+      assignments: Assignment[];
+      activities: ActivityLog[];
+      integration?: GithubIntegration | null;
+    }>(`/project-management/projects/${projectId}/overview`),
+  assignments: (projectId: string) =>
+    request<{ assignments: Assignment[] }>(`/project-management/projects/${projectId}/assignments`),
+  listGithubRepositories: () =>
+    request<{ repositories: { id: string; owner: string; repo: string; fullName: string; private: boolean; defaultBranch: string }[] }>(
+      '/project-management/github/repositories'
+    ),
+  githubRepository: (projectId: string) =>
+    request<{ integration?: GithubIntegration | null }>(`/project-management/projects/${projectId}/github/repository`),
+  connectRepository: (projectId: string, body: { owner: string; repo: string; branch?: string }) =>
+    request<{ integration: GithubIntegration }>(`/project-management/projects/${projectId}/github/repository`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  syncCollaborators: (projectId: string) =>
+    request<{ integration: GithubIntegration }>(`/project-management/projects/${projectId}/github/collaborators/sync`, {
+      method: 'POST'
+    }),
+  inviteCollaborator: (projectId: string, body: { usernameOrEmail: string; permission?: 'pull' | 'triage' | 'push' | 'maintain' | 'admin' }) =>
+    request<{ integration: GithubIntegration }>(`/project-management/projects/${projectId}/github/invite`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+  syncGoalProgress: (projectId: string) =>
+    request<{ updatedGoals: number; lastSyncedAt: string }>(`/project-management/projects/${projectId}/progress/sync`, {
+      method: 'POST'
+    }),
+  notifications: () => request<{ notifications: NotificationItem[] }>('/project-management/notifications'),
+  markNotificationRead: (notificationId: string) =>
+    request<{ notification: NotificationItem }>(`/project-management/notifications/${notificationId}/read`, {
+      method: 'PATCH'
+    })
 };

@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/migrations/001-project-management-indexes.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
